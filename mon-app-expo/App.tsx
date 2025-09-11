@@ -9,10 +9,15 @@ export default function App() {
   const [isMoving, setIsMoving] = useState(false);
   const [towerBlocks, setTowerBlocks] = useState<Array<{id: number, position: number, color: string}>>([]);
   const [gameOver, setGameOver] = useState(false);
+  const [strikes, setStrikes] = useState(0);
+  const [isFalling, setIsFalling] = useState(false);
+  const [fallingBlockData, setFallingBlockData] = useState<{position: number, color: string} | null>(null);
+  
+  const maxStrikes = 3;
 
   const colors = [
-    '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
-    '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#84cc16'
+    '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffc93c',
+    '#ff9ff3', '#54a0ff', '#5f27cd', '#00d2d3', '#ff9f43'
   ];
 
   // Animation pour le mouvement des blocs
@@ -20,10 +25,14 @@ export default function App() {
   const blockWidth = 120; // Largeur augmentée pour des blocs plus horizontaux
   const blockHeight = 40; // Hauteur augmentée pour une meilleure visibilité
   const screenWidth = Dimensions.get('window').width;
+  const screenHeight = Dimensions.get('window').height;
+  const startingHeight = 120; // Hauteur de départ des blocs
   const maxMoveDistance = (screenWidth - blockWidth) / 2;
   const [blockPosition, setBlockPosition] = useState(0); // Position actuelle du bloc
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
   const animationValueRef = useRef(new Animated.Value(0)).current;
+  const fallingAnimation = useRef(new Animated.Value(0)).current;
+  const shakeAnimation = useRef(new Animated.Value(0)).current;
 
 
   const handleStartGame = () => {
@@ -31,6 +40,9 @@ export default function App() {
     setCurrentLevel(0);
     setGameCompleted(false);
     setIsMoving(false);
+    setStrikes(0);
+    setIsFalling(false);
+    setFallingBlockData(null);
     animationValueRef.setValue(0);
     moveAnimation.setValue(0);
     setBlockPosition(0);
@@ -95,10 +107,71 @@ export default function App() {
     (animation as any).listener = listener;
   };
 
-  // Vérifier si le bloc est bien placé (collision avec le bloc précédent)
-  const checkBlockPlacement = (currentPosition: number, previousPosition: number) => {
-    const tolerance = 30; // Tolérance de placement (en pixels)
-    return Math.abs(currentPosition - previousPosition) <= tolerance;
+  // Vérifier si le bloc touche le bloc précédent (même partiellement)
+  const checkBlockOverlap = (currentPosition: number, previousPosition: number) => {
+    const currentLeft = currentPosition - blockWidth / 2;
+    const currentRight = currentPosition + blockWidth / 2;
+    const previousLeft = previousPosition - blockWidth / 2;
+    const previousRight = previousPosition + blockWidth / 2;
+    
+    // Vérifier s'il y a un chevauchement (même minimal)
+    return !(currentRight <= previousLeft || currentLeft >= previousRight);
+  };
+
+  // Vérifier la stabilité simple: le centre du bloc supérieur doit être au-dessus du bloc inférieur
+  const checkSimpleStability = (upperBlockPosition: number, lowerBlockPosition: number) => {
+    const lowerBlockLeft = lowerBlockPosition - blockWidth / 2;
+    const lowerBlockRight = lowerBlockPosition + blockWidth / 2;
+    
+    // Le centre du bloc supérieur doit être dans les limites du bloc inférieur
+    return upperBlockPosition >= lowerBlockLeft && upperBlockPosition <= lowerBlockRight;
+  };
+
+  // Animation de chute et bris du bloc
+  const animateBlockFall = (blockPosition: number, blockColor: string) => {
+    setIsFalling(true);
+    setFallingBlockData({ position: blockPosition, color: blockColor });
+    
+    // Reset des animations
+    fallingAnimation.setValue(startingHeight + (currentLevel * blockHeight));
+    shakeAnimation.setValue(0);
+    
+    // Animation de chute
+    const fallAnimation = Animated.timing(fallingAnimation, {
+      toValue: 20, // Tombe jusqu'à la plateforme
+      duration: 800,
+      useNativeDriver: true,
+    });
+    
+    // Animation de tremblement lors de l'impact
+    const breakAnimation = Animated.sequence([
+      Animated.timing(shakeAnimation, {
+        toValue: 10,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(shakeAnimation, {
+        toValue: -10,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(shakeAnimation, {
+        toValue: 5,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(shakeAnimation, {
+        toValue: 0,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]);
+    
+    // Lancer les animations en séquence
+    Animated.sequence([fallAnimation, breakAnimation]).start(() => {
+      setIsFalling(false);
+      setFallingBlockData(null);
+    });
   };
 
   const handleAddBlock = () => {
@@ -117,7 +190,7 @@ export default function App() {
       // Obtenir la position actuelle du bloc
       const currentBlockPosition = blockPosition;
       
-      // Pour le premier bloc, pas de vérification de collision
+      // Pour le premier bloc, il peut être placé n'importe où sur la ligne
       if (currentLevel === 0) {
         const newBlock = {
           id: currentLevel,
@@ -129,30 +202,52 @@ export default function App() {
         // Redémarrer le mouvement pour le prochain bloc
         setTimeout(() => startBlockMovement(), 500);
       } else {
-        // Vérifier la collision avec le bloc précédent
+        // Vérifier si le bloc touche le bloc précédent
         const previousBlock = towerBlocks[towerBlocks.length - 1];
-        const isWellPlaced = checkBlockPlacement(currentBlockPosition, previousBlock.position);
+        const hasOverlap = checkBlockOverlap(currentBlockPosition, previousBlock.position);
         
-        if (isWellPlaced) {
-          // Bloc bien placé, l'ajouter à la tour
-          const newBlock = {
-            id: currentLevel,
-            position: currentBlockPosition,
-            color: colors[currentLevel]
-          };
-          setTowerBlocks([...towerBlocks, newBlock]);
+        if (!hasOverlap) {
+          // Aucun chevauchement = le bloc tombe complètement
+          animateBlockFall(currentBlockPosition, colors[currentLevel]);
+          const newStrikes = strikes + 1;
+          setStrikes(newStrikes);
           
-          if (currentLevel < 9) {
-            setCurrentLevel(currentLevel + 1);
-            // Redémarrer le mouvement pour le prochain bloc
-            setTimeout(() => startBlockMovement(), 500);
+          if (newStrikes >= maxStrikes) {
+            setTimeout(() => setGameOver(true), 1000); // Délai pour voir l'animation
           } else {
-            setGameCompleted(true);
+            setTimeout(() => startBlockMovement(), 1500); // Redémarrer après l'animation
           }
-        } else {
-          // Bloc mal placé, le faire disparaître et casser la tour
-          setGameOver(true);
+          return;
         }
+        
+        // Il y a un chevauchement, vérifier la stabilité simple (centre du bloc supérieur)
+        const isStable = checkSimpleStability(currentBlockPosition, previousBlock.position);
+        
+        if (!isStable) {
+          // Le centre du bloc supérieur est en dehors du bloc inférieur = bloc tombe
+          animateBlockFall(currentBlockPosition, colors[currentLevel]);
+          const newStrikes = strikes + 1;
+          setStrikes(newStrikes);
+          
+          if (newStrikes >= maxStrikes) {
+            setTimeout(() => setGameOver(true), 1000); // Délai pour voir l'animation
+          } else {
+            setTimeout(() => startBlockMovement(), 1500); // Redémarrer après l'animation
+          }
+          return;
+        }
+        
+        // Bloc stable, l'ajouter à la tour
+        const newBlock = {
+          id: currentLevel,
+          position: currentBlockPosition,
+          color: colors[currentLevel % colors.length] // Cycle through colors
+        };
+        setTowerBlocks([...towerBlocks, newBlock]);
+        setCurrentLevel(currentLevel + 1);
+        
+        // Redémarrer le mouvement pour le prochain bloc
+        setTimeout(() => startBlockMovement(), 500);
       }
     } else {
       // Démarrer le mouvement du bloc
@@ -164,6 +259,9 @@ export default function App() {
     setCurrentLevel(0);
     setGameCompleted(false);
     setIsMoving(false);
+    setStrikes(0);
+    setIsFalling(false);
+    setFallingBlockData(null);
     if (animationRef.current) {
       animationRef.current.stop();
     }
@@ -172,6 +270,8 @@ export default function App() {
     setTowerBlocks([]);
     setGameOver(false);
     setBlockPosition(0);
+    // Redémarrer le jeu automatiquement
+    setTimeout(() => startBlockMovement(), 1000);
   };
 
   const handleBackToMenu = () => {
@@ -216,8 +316,12 @@ export default function App() {
     return (
       <View style={styles.container}>
         <Text style={styles.title}>💥 Game Over !</Text>
-        <Text style={styles.subtitle}>Le bloc s'est cassé ! Essayez de mieux viser !</Text>
-        <Text style={styles.scoreText}>Score: {towerBlocks.length} blocs</Text>
+        <Text style={styles.subtitle}>
+          Vous avez fait {maxStrikes} erreurs ! Les blocs se sont brisés sur la plateforme !
+        </Text>
+        <Text style={styles.scoreText}>
+          Tour finale: {towerBlocks.length} blocs • Erreurs: {strikes}/{maxStrikes}
+        </Text>
         
         <View style={styles.buttonContainer}>
           <TouchableOpacity style={styles.startButton} onPress={handleResetGame}>
@@ -263,13 +367,21 @@ export default function App() {
         <TouchableOpacity style={styles.backButton} onPress={handleBackToMenu}>
           <Text style={styles.backButtonText}>← Menu</Text>
         </TouchableOpacity>
-        <Text style={styles.levelText}>Niveau: {currentLevel + 1}/10</Text>
+        <View style={styles.gameInfo}>
+          <Text style={styles.levelText}>Niveau: {currentLevel + 1}</Text>
+          <Text style={styles.strikesText}>
+            Erreurs: {strikes}/{maxStrikes} {Array(maxStrikes - strikes).fill('❤️').join('')}{Array(strikes).fill('💔').join('')}
+          </Text>
+        </View>
       </View>
 
       {/* Zone de jeu cliquable */}
       <TouchableWithoutFeedback onPress={handleAddBlock}>
         <View style={[styles.gameArea, isMoving && styles.gameAreaActive]}>
           <View style={styles.towerContainer}>
+            {/* Ligne de départ visuelle */}
+            <View style={styles.startingLine} />
+            
             {/* Blocs empilés avec positionnement précis */}
             {towerBlocks.map((block, index) => (
               <View
@@ -278,7 +390,7 @@ export default function App() {
                   styles.block,
                   {
                     backgroundColor: block.color,
-                    bottom: index * blockHeight,
+                    bottom: startingHeight + (index * blockHeight),
                     zIndex: towerBlocks.length - index,
                     left: screenWidth / 2 - blockWidth / 2 + block.position,
                   }
@@ -292,11 +404,29 @@ export default function App() {
                 style={[
                   styles.movingBlock,
                   {
-                    backgroundColor: colors[currentLevel],
-                    bottom: currentLevel * blockHeight,
+                    backgroundColor: colors[currentLevel % colors.length],
+                    bottom: startingHeight + (currentLevel * blockHeight),
                     zIndex: 10,
                     left: screenWidth / 2 - blockWidth / 2,
                     transform: [{ translateX: moveAnimation }],
+                  }
+                ]}
+              />
+            )}
+            
+            {/* Bloc qui tombe (animation de chute) */}
+            {isFalling && fallingBlockData && (
+              <Animated.View
+                style={[
+                  styles.fallingBlock,
+                  {
+                    backgroundColor: fallingBlockData.color,
+                    left: screenWidth / 2 - blockWidth / 2 + fallingBlockData.position,
+                    zIndex: 15,
+                    transform: [
+                      { translateY: fallingAnimation },
+                      { translateX: shakeAnimation }
+                    ],
                   }
                 ]}
               />
@@ -316,7 +446,7 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#1a1a2e',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
@@ -339,34 +469,38 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   startButton: {
-    backgroundColor: '#10b981',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
+    backgroundColor: '#4ecdc4',
+    paddingVertical: 18,
+    paddingHorizontal: 36,
+    borderRadius: 16,
     alignItems: 'center',
-    shadowColor: '#10b981',
+    shadowColor: '#4ecdc4',
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 6,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   exitButton: {
-    backgroundColor: '#ef4444',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
+    backgroundColor: '#ff6b6b',
+    paddingVertical: 18,
+    paddingHorizontal: 36,
+    borderRadius: 16,
     alignItems: 'center',
-    shadowColor: '#ef4444',
+    shadowColor: '#ff6b6b',
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 6,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   buttonText: {
     color: '#ffffff',
@@ -377,7 +511,7 @@ const styles = StyleSheet.create({
   // Styles pour l'écran de jeu
   gameContainer: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#1a1a2e',
   },
   gameHeader: {
     flexDirection: 'row',
@@ -398,17 +532,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  gameInfo: {
+    alignItems: 'flex-end',
+  },
   levelText: {
     color: '#ffffff',
     fontSize: 18,
     fontWeight: '700',
+  },
+  strikesText: {
+    color: '#ffc93c',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 4,
   },
   gameArea: {
     flex: 1,
     position: 'relative',
   },
   gameAreaActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.05)',
+    backgroundColor: 'rgba(0, 210, 211, 0.1)',
   },
   towerContainer: {
     flex: 1,
@@ -417,55 +560,77 @@ const styles = StyleSheet.create({
     paddingBottom: 50,
     position: 'relative',
   },
+  startingLine: {
+    position: 'absolute',
+    bottom: 120, // Position de la ligne de départ (plus basse)
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: '#00d2d3',
+    marginHorizontal: 40,
+    borderRadius: 2,
+    shadowColor: '#00d2d3',
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    elevation: 8,
+  },
   block: {
     width: 120,
     height: 40,
-    borderRadius: 8,
-    position: 'absolute',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-    borderWidth: 2,
-    borderColor: '#ffffff',
-    // Effet 3D avec gradient simulé
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 3,
-    borderBottomWidth: 3,
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#1f2937',
-    borderBottomColor: '#1f2937',
-  },
-  movingBlock: {
-    width: 120,
-    height: 40,
-    borderRadius: 8,
+    borderRadius: 12,
     position: 'absolute',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 6,
     },
-    shadowOpacity: 0.6,
+    shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 12,
+    // Effet de profondeur moderne
+    borderWidth: 0,
+    // Effet de brillance
+    overflow: 'hidden',
+  },
+  movingBlock: {
+    width: 120,
+    height: 40,
+    borderRadius: 12,
+    position: 'absolute',
+    shadowColor: '#ffffff',
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 0.8,
+    shadowRadius: 16,
+    elevation: 20,
+    // Effet de lueur pour le bloc en mouvement
     borderWidth: 2,
-    borderColor: '#ffffff',
-    // Effet 3D plus prononcé pour le bloc en mouvement
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 4,
-    borderBottomWidth: 4,
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#111827',
-    borderBottomColor: '#111827',
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    overflow: 'hidden',
+  },
+  fallingBlock: {
+    width: 120,
+    height: 40,
+    borderRadius: 12,
+    position: 'absolute',
+    shadowColor: '#ff6b6b',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    elevation: 15,
+    // Effet de cassure/bris
+    borderWidth: 3,
+    borderColor: 'rgba(255, 107, 107, 0.8)',
+    opacity: 0.9,
   },
   scoreText: {
     color: '#fbbf24',
