@@ -1,21 +1,31 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, TouchableOpacity, Alert, Dimensions } from 'react-native';
-import { useState } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, Dimensions, Animated } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
 
 export default function App() {
   const [isGameStarted, setIsGameStarted] = useState(false);
   const [currentLevel, setCurrentLevel] = useState(0);
   const [gameCompleted, setGameCompleted] = useState(false);
+  const [isMoving, setIsMoving] = useState(false);
 
   const colors = [
     '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
     '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#84cc16'
   ];
 
+  // Animation pour le mouvement des blocs
+  const moveAnimation = useRef(new Animated.Value(0)).current;
+  const blockWidth = 80;
+  const screenWidth = Dimensions.get('window').width;
+  const maxMoveDistance = (screenWidth - blockWidth) / 2;
+
+
   const handleStartGame = () => {
     setIsGameStarted(true);
     setCurrentLevel(0);
     setGameCompleted(false);
+    setIsMoving(false);
+    moveAnimation.setValue(0);
   };
 
   const handleExitGame = () => {
@@ -33,23 +43,63 @@ export default function App() {
     );
   };
 
+  // Démarrer le mouvement du bloc
+  const startBlockMovement = () => {
+    if (isMoving) return;
+    
+    setIsMoving(true);
+    moveAnimation.setValue(0);
+    
+    const createMovement = () => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.timing(moveAnimation, {
+            toValue: maxMoveDistance,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(moveAnimation, {
+            toValue: -maxMoveDistance,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+    };
+    
+    createMovement().start();
+  };
+
   const handleAddBlock = () => {
-    if (currentLevel < 9) {
-      setCurrentLevel(currentLevel + 1);
+    if (isMoving) {
+      // Arrêter le mouvement et ajouter le bloc
+      moveAnimation.stopAnimation();
+      setIsMoving(false);
+      
+      if (currentLevel < 9) {
+        setCurrentLevel(currentLevel + 1);
+      } else {
+        setGameCompleted(true);
+      }
     } else {
-      setGameCompleted(true);
+      // Démarrer le mouvement du bloc
+      startBlockMovement();
     }
   };
 
   const handleResetGame = () => {
     setCurrentLevel(0);
     setGameCompleted(false);
+    setIsMoving(false);
+    moveAnimation.setValue(0);
   };
 
   const handleBackToMenu = () => {
     setIsGameStarted(false);
     setCurrentLevel(0);
     setGameCompleted(false);
+    setIsMoving(false);
+    moveAnimation.setValue(0);
   };
 
   // Écran de menu principal
@@ -107,7 +157,8 @@ export default function App() {
       </View>
 
       <View style={styles.towerContainer}>
-        {Array.from({ length: currentLevel + 1 }, (_, index) => (
+        {/* Blocs empilés */}
+        {Array.from({ length: currentLevel }, (_, index) => (
           <View
             key={index}
             style={[
@@ -120,11 +171,31 @@ export default function App() {
             ]}
           />
         ))}
+        
+        {/* Bloc en mouvement (si en cours) */}
+        {isMoving && (
+          <Animated.View
+            style={[
+              styles.movingBlock,
+              {
+                backgroundColor: colors[currentLevel],
+                bottom: currentLevel * 60,
+                zIndex: 10,
+                transform: [{ translateX: moveAnimation }],
+              }
+            ]}
+          />
+        )}
       </View>
 
       <View style={styles.gameControls}>
-        <TouchableOpacity style={styles.addBlockButton} onPress={handleAddBlock}>
-          <Text style={styles.buttonText}>Ajouter un bloc</Text>
+        <TouchableOpacity 
+          style={[styles.addBlockButton, isMoving && styles.addBlockButtonActive]} 
+          onPress={handleAddBlock}
+        >
+          <Text style={styles.buttonText}>
+            {isMoving ? 'Placer le bloc' : 'Ajouter un bloc'}
+          </Text>
         </TouchableOpacity>
       </View>
       
@@ -240,13 +311,47 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 6,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-    borderWidth: 2,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 12,
+    borderWidth: 3,
     borderColor: '#ffffff',
+    // Effet 3D avec gradient simulé
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 4,
+    borderBottomWidth: 4,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#1f2937',
+    borderBottomColor: '#1f2937',
+  },
+  movingBlock: {
+    width: 80,
+    height: 60,
+    borderRadius: 8,
+    position: 'absolute',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 16,
+    borderWidth: 3,
+    borderColor: '#ffffff',
+    // Effet 3D plus prononcé pour le bloc en mouvement
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 5,
+    borderBottomWidth: 5,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#111827',
+    borderBottomColor: '#111827',
   },
   gameControls: {
     paddingHorizontal: 20,
@@ -266,5 +371,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+  addBlockButtonActive: {
+    backgroundColor: '#10b981',
+    shadowColor: '#10b981',
+    transform: [{ scale: 1.05 }],
   },
 });
