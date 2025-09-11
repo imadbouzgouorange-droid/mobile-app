@@ -18,7 +18,7 @@ export default function App() {
   // Animation pour le mouvement des blocs
   const moveAnimation = useRef(new Animated.Value(0)).current;
   const blockWidth = 120; // Largeur augmentée pour des blocs plus horizontaux
-  const blockHeight = 30; // Hauteur réduite pour des blocs horizontaux fins
+  const blockHeight = 40; // Hauteur augmentée pour une meilleure visibilité
   const screenWidth = Dimensions.get('window').width;
   const maxMoveDistance = (screenWidth - blockWidth) / 2;
   const [blockPosition, setBlockPosition] = useState(0); // Position actuelle du bloc
@@ -303,14 +303,6 @@ export default function App() {
             )}
           </View>
 
-          {/* Instructions de jeu avec animation */}
-          <View style={styles.instructionsContainer}>
-            <Animated.View style={isMoving ? styles.instructionsPulse : null}>
-              <Text style={[styles.instructionsText, isMoving && styles.instructionsTextActive]}>
-                {isMoving ? '👆 Cliquez pour placer le bloc' : '👆 Cliquez pour ajouter un bloc'}
-              </Text>
-            </Animated.View>
-          </View>
         </View>
       </TouchableWithoutFeedback>
       
@@ -422,48 +414,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingBottom: 120,
+    paddingBottom: 50,
     position: 'relative',
-  },
-  instructionsContainer: {
-    position: 'absolute',
-    bottom: 20,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  instructionsText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 25,
-    borderWidth: 2,
-    borderColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  instructionsTextActive: {
-    backgroundColor: 'rgba(16, 185, 129, 0.8)',
-    borderColor: '#10b981',
-    color: '#ffffff',
-  },
-  instructionsPulse: {
-    transform: [{ scale: 1.1 }],
   },
   block: {
     width: 120,
-    height: 30,
+    height: 40,
     borderRadius: 8,
     position: 'absolute',
     shadowColor: '#000',
@@ -488,7 +444,7 @@ const styles = StyleSheet.create({
   },
   movingBlock: {
     width: 120,
-    height: 30,
+    height: 40,
     borderRadius: 8,
     position: 'absolute',
     shadowColor: '#000',
