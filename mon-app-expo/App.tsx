@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, TouchableOpacity, Alert, Dimensions, Animated, Easing } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, Dimensions, Animated, Easing, TouchableWithoutFeedback } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 
 export default function App() {
@@ -266,50 +266,53 @@ export default function App() {
         <Text style={styles.levelText}>Niveau: {currentLevel + 1}/10</Text>
       </View>
 
-      <View style={styles.towerContainer}>
-        {/* Blocs empilés avec positionnement précis */}
-        {towerBlocks.map((block, index) => (
-          <View
-            key={block.id}
-            style={[
-              styles.block,
-              {
-                backgroundColor: block.color,
-                bottom: index * blockHeight,
-                zIndex: towerBlocks.length - index,
-                left: screenWidth / 2 - blockWidth / 2 + block.position,
-              }
-            ]}
-          />
-        ))}
-        
-        {/* Bloc en mouvement (si en cours) */}
-        {isMoving && (
-          <Animated.View
-            style={[
-              styles.movingBlock,
-              {
-                backgroundColor: colors[currentLevel],
-                bottom: currentLevel * blockHeight,
-                zIndex: 10,
-                left: screenWidth / 2 - blockWidth / 2,
-                transform: [{ translateX: moveAnimation }],
-              }
-            ]}
-          />
-        )}
-      </View>
+      {/* Zone de jeu cliquable */}
+      <TouchableWithoutFeedback onPress={handleAddBlock}>
+        <View style={[styles.gameArea, isMoving && styles.gameAreaActive]}>
+          <View style={styles.towerContainer}>
+            {/* Blocs empilés avec positionnement précis */}
+            {towerBlocks.map((block, index) => (
+              <View
+                key={block.id}
+                style={[
+                  styles.block,
+                  {
+                    backgroundColor: block.color,
+                    bottom: index * blockHeight,
+                    zIndex: towerBlocks.length - index,
+                    left: screenWidth / 2 - blockWidth / 2 + block.position,
+                  }
+                ]}
+              />
+            ))}
+            
+            {/* Bloc en mouvement (si en cours) */}
+            {isMoving && (
+              <Animated.View
+                style={[
+                  styles.movingBlock,
+                  {
+                    backgroundColor: colors[currentLevel],
+                    bottom: currentLevel * blockHeight,
+                    zIndex: 10,
+                    left: screenWidth / 2 - blockWidth / 2,
+                    transform: [{ translateX: moveAnimation }],
+                  }
+                ]}
+              />
+            )}
+          </View>
 
-      <View style={styles.gameControls}>
-        <TouchableOpacity 
-          style={[styles.addBlockButton, isMoving && styles.addBlockButtonActive]} 
-          onPress={handleAddBlock}
-        >
-          <Text style={styles.buttonText}>
-            {isMoving ? 'Placer le bloc' : 'Ajouter un bloc'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+          {/* Instructions de jeu avec animation */}
+          <View style={styles.instructionsContainer}>
+            <Animated.View style={isMoving ? styles.instructionsPulse : null}>
+              <Text style={[styles.instructionsText, isMoving && styles.instructionsTextActive]}>
+                {isMoving ? '👆 Cliquez pour placer le bloc' : '👆 Cliquez pour ajouter un bloc'}
+              </Text>
+            </Animated.View>
+          </View>
+        </View>
+      </TouchableWithoutFeedback>
       
       <StatusBar style="auto" />
     </View>
@@ -408,12 +411,55 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
+  gameArea: {
+    flex: 1,
+    position: 'relative',
+  },
+  gameAreaActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.05)',
+  },
   towerContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingBottom: 100,
+    paddingBottom: 120,
     position: 'relative',
+  },
+  instructionsContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  instructionsText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  instructionsTextActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.8)',
+    borderColor: '#10b981',
+    color: '#ffffff',
+  },
+  instructionsPulse: {
+    transform: [{ scale: 1.1 }],
   },
   block: {
     width: 120,
@@ -464,30 +510,6 @@ const styles = StyleSheet.create({
     borderLeftColor: '#ffffff',
     borderRightColor: '#111827',
     borderBottomColor: '#111827',
-  },
-  gameControls: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-  },
-  addBlockButton: {
-    backgroundColor: '#3b82f6',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    alignItems: 'center',
-    shadowColor: '#3b82f6',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  addBlockButtonActive: {
-    backgroundColor: '#10b981',
-    shadowColor: '#10b981',
-    transform: [{ scale: 1.05 }],
   },
   scoreText: {
     color: '#fbbf24',
