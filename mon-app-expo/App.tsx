@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, TouchableOpacity, Alert, Dimensions, Animated } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, Dimensions, Animated, Easing } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 
 export default function App() {
@@ -17,10 +17,13 @@ export default function App() {
 
   // Animation pour le mouvement des blocs
   const moveAnimation = useRef(new Animated.Value(0)).current;
-  const blockWidth = 80;
+  const blockWidth = 120; // Largeur augmentée pour des blocs plus horizontaux
+  const blockHeight = 30; // Hauteur réduite pour des blocs horizontaux fins
   const screenWidth = Dimensions.get('window').width;
   const maxMoveDistance = (screenWidth - blockWidth) / 2;
   const [blockPosition, setBlockPosition] = useState(0); // Position actuelle du bloc
+  const animationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const animationValueRef = useRef(new Animated.Value(0)).current;
 
 
   const handleStartGame = () => {
@@ -28,10 +31,13 @@ export default function App() {
     setCurrentLevel(0);
     setGameCompleted(false);
     setIsMoving(false);
+    animationValueRef.setValue(0);
     moveAnimation.setValue(0);
     setBlockPosition(0);
     setTowerBlocks([]);
     setGameOver(false);
+    // Démarrer automatiquement le mouvement du premier bloc
+    setTimeout(() => startBlockMovement(), 1000);
   };
 
   const handleExitGame = () => {
@@ -54,39 +60,39 @@ export default function App() {
     if (isMoving) return;
     
     setIsMoving(true);
+    
+    // Initialiser les valeurs d'animation
+    animationValueRef.setValue(0);
     moveAnimation.setValue(0);
     setBlockPosition(0);
     
-    // Écouter les changements de position pour un suivi précis
-    const listener = moveAnimation.addListener(({ value }) => {
-      setBlockPosition(value);
+    // Créer une animation continue basée sur une fonction sinusoïdale
+    const listener = animationValueRef.addListener(({ value }) => {
+      // Convertir la valeur (0-1) en position sinusoïdale
+      const sineValue = Math.sin(value * Math.PI * 2);
+      const position = sineValue * maxMoveDistance;
+      
+      // Mettre à jour la position du bloc
+      moveAnimation.setValue(position);
+      setBlockPosition(position);
     });
     
-    const createMovement = () => {
-      return Animated.loop(
-        Animated.sequence([
-          // Aller vers la droite
-          Animated.timing(moveAnimation, {
-            toValue: maxMoveDistance,
-            duration: 3000,
-            useNativeDriver: true,
-          }),
-          // Revenir vers la gauche
-          Animated.timing(moveAnimation, {
-            toValue: -maxMoveDistance,
-            duration: 3000,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-    };
+    // Créer une animation continue qui fait une rotation complète toutes les 4 secondes
+    const animation = Animated.loop(
+      Animated.timing(animationValueRef, {
+        toValue: 1,
+        duration: 4000,
+        easing: Easing.linear,
+        useNativeDriver: false, // On doit utiliser false car on fait des calculs manuels
+      }),
+      { resetBeforeIteration: true }
+    );
     
-    createMovement().start();
+    animationRef.current = animation;
+    animation.start();
     
-    // Nettoyer le listener quand l'animation s'arrête
-    return () => {
-      moveAnimation.removeListener(listener);
-    };
+    // Stocker le listener pour le nettoyer plus tard
+    (animation as any).listener = listener;
   };
 
   // Vérifier si le bloc est bien placé (collision avec le bloc précédent)
@@ -98,6 +104,13 @@ export default function App() {
   const handleAddBlock = () => {
     if (isMoving) {
       // Arrêter le mouvement et vérifier le placement
+      if (animationRef.current) {
+        animationRef.current.stop();
+        // Nettoyer le listener
+        if ((animationRef.current as any).listener) {
+          animationValueRef.removeListener((animationRef.current as any).listener);
+        }
+      }
       moveAnimation.stopAnimation();
       setIsMoving(false);
       
@@ -113,6 +126,8 @@ export default function App() {
         };
         setTowerBlocks([newBlock]);
         setCurrentLevel(1);
+        // Redémarrer le mouvement pour le prochain bloc
+        setTimeout(() => startBlockMovement(), 500);
       } else {
         // Vérifier la collision avec le bloc précédent
         const previousBlock = towerBlocks[towerBlocks.length - 1];
@@ -129,6 +144,8 @@ export default function App() {
           
           if (currentLevel < 9) {
             setCurrentLevel(currentLevel + 1);
+            // Redémarrer le mouvement pour le prochain bloc
+            setTimeout(() => startBlockMovement(), 500);
           } else {
             setGameCompleted(true);
           }
@@ -147,6 +164,10 @@ export default function App() {
     setCurrentLevel(0);
     setGameCompleted(false);
     setIsMoving(false);
+    if (animationRef.current) {
+      animationRef.current.stop();
+    }
+    animationValueRef.setValue(0);
     moveAnimation.setValue(0);
     setTowerBlocks([]);
     setGameOver(false);
@@ -158,6 +179,10 @@ export default function App() {
     setCurrentLevel(0);
     setGameCompleted(false);
     setIsMoving(false);
+    if (animationRef.current) {
+      animationRef.current.stop();
+    }
+    animationValueRef.setValue(0);
     moveAnimation.setValue(0);
     setTowerBlocks([]);
     setGameOver(false);
@@ -250,7 +275,7 @@ export default function App() {
               styles.block,
               {
                 backgroundColor: block.color,
-                bottom: index * 60,
+                bottom: index * blockHeight,
                 zIndex: towerBlocks.length - index,
                 left: screenWidth / 2 - blockWidth / 2 + block.position,
               }
@@ -265,7 +290,7 @@ export default function App() {
               styles.movingBlock,
               {
                 backgroundColor: colors[currentLevel],
-                bottom: currentLevel * 60,
+                bottom: currentLevel * blockHeight,
                 zIndex: 10,
                 left: screenWidth / 2 - blockWidth / 2,
                 transform: [{ translateX: moveAnimation }],
@@ -391,8 +416,33 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   block: {
-    width: 80,
-    height: 60,
+    width: 120,
+    height: 30,
+    borderRadius: 8,
+    position: 'absolute',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    // Effet 3D avec gradient simulé
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 3,
+    borderBottomWidth: 3,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#1f2937',
+    borderBottomColor: '#1f2937',
+  },
+  movingBlock: {
+    width: 120,
+    height: 30,
     borderRadius: 8,
     position: 'absolute',
     shadowColor: '#000',
@@ -400,41 +450,16 @@ const styles = StyleSheet.create({
       width: 0,
       height: 6,
     },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.6,
     shadowRadius: 12,
     elevation: 12,
-    borderWidth: 3,
-    borderColor: '#ffffff',
-    // Effet 3D avec gradient simulé
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 4,
-    borderBottomWidth: 4,
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#1f2937',
-    borderBottomColor: '#1f2937',
-  },
-  movingBlock: {
-    width: 80,
-    height: 60,
-    borderRadius: 8,
-    position: 'absolute',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.6,
-    shadowRadius: 16,
-    elevation: 16,
-    borderWidth: 3,
+    borderWidth: 2,
     borderColor: '#ffffff',
     // Effet 3D plus prononcé pour le bloc en mouvement
     borderTopWidth: 1,
     borderLeftWidth: 1,
-    borderRightWidth: 5,
-    borderBottomWidth: 5,
+    borderRightWidth: 4,
+    borderBottomWidth: 4,
     borderTopColor: '#ffffff',
     borderLeftColor: '#ffffff',
     borderRightColor: '#111827',
