@@ -7,6 +7,8 @@ export default function App() {
   const [currentLevel, setCurrentLevel] = useState(0);
   const [gameCompleted, setGameCompleted] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
+  const [towerBlocks, setTowerBlocks] = useState<Array<{id: number, position: number, color: string}>>([]);
+  const [gameOver, setGameOver] = useState(false);
 
   const colors = [
     '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
@@ -18,6 +20,7 @@ export default function App() {
   const blockWidth = 80;
   const screenWidth = Dimensions.get('window').width;
   const maxMoveDistance = (screenWidth - blockWidth) / 2;
+  const [blockPosition, setBlockPosition] = useState(0); // Position actuelle du bloc
 
 
   const handleStartGame = () => {
@@ -26,6 +29,9 @@ export default function App() {
     setGameCompleted(false);
     setIsMoving(false);
     moveAnimation.setValue(0);
+    setBlockPosition(0);
+    setTowerBlocks([]);
+    setGameOver(false);
   };
 
   const handleExitGame = () => {
@@ -43,24 +49,32 @@ export default function App() {
     );
   };
 
-  // Démarrer le mouvement du bloc
+  // Démarrer le mouvement du bloc avec mouvement fluide et consistant
   const startBlockMovement = () => {
     if (isMoving) return;
     
     setIsMoving(true);
     moveAnimation.setValue(0);
+    setBlockPosition(0);
+    
+    // Écouter les changements de position pour un suivi précis
+    const listener = moveAnimation.addListener(({ value }) => {
+      setBlockPosition(value);
+    });
     
     const createMovement = () => {
       return Animated.loop(
         Animated.sequence([
+          // Aller vers la droite
           Animated.timing(moveAnimation, {
             toValue: maxMoveDistance,
-            duration: 2000,
+            duration: 3000,
             useNativeDriver: true,
           }),
+          // Revenir vers la gauche
           Animated.timing(moveAnimation, {
             toValue: -maxMoveDistance,
-            duration: 2000,
+            duration: 3000,
             useNativeDriver: true,
           }),
         ])
@@ -68,18 +82,60 @@ export default function App() {
     };
     
     createMovement().start();
+    
+    // Nettoyer le listener quand l'animation s'arrête
+    return () => {
+      moveAnimation.removeListener(listener);
+    };
+  };
+
+  // Vérifier si le bloc est bien placé (collision avec le bloc précédent)
+  const checkBlockPlacement = (currentPosition: number, previousPosition: number) => {
+    const tolerance = 30; // Tolérance de placement (en pixels)
+    return Math.abs(currentPosition - previousPosition) <= tolerance;
   };
 
   const handleAddBlock = () => {
     if (isMoving) {
-      // Arrêter le mouvement et ajouter le bloc
+      // Arrêter le mouvement et vérifier le placement
       moveAnimation.stopAnimation();
       setIsMoving(false);
       
-      if (currentLevel < 9) {
-        setCurrentLevel(currentLevel + 1);
+      // Obtenir la position actuelle du bloc
+      const currentBlockPosition = blockPosition;
+      
+      // Pour le premier bloc, pas de vérification de collision
+      if (currentLevel === 0) {
+        const newBlock = {
+          id: currentLevel,
+          position: currentBlockPosition,
+          color: colors[currentLevel]
+        };
+        setTowerBlocks([newBlock]);
+        setCurrentLevel(1);
       } else {
-        setGameCompleted(true);
+        // Vérifier la collision avec le bloc précédent
+        const previousBlock = towerBlocks[towerBlocks.length - 1];
+        const isWellPlaced = checkBlockPlacement(currentBlockPosition, previousBlock.position);
+        
+        if (isWellPlaced) {
+          // Bloc bien placé, l'ajouter à la tour
+          const newBlock = {
+            id: currentLevel,
+            position: currentBlockPosition,
+            color: colors[currentLevel]
+          };
+          setTowerBlocks([...towerBlocks, newBlock]);
+          
+          if (currentLevel < 9) {
+            setCurrentLevel(currentLevel + 1);
+          } else {
+            setGameCompleted(true);
+          }
+        } else {
+          // Bloc mal placé, le faire disparaître et casser la tour
+          setGameOver(true);
+        }
       }
     } else {
       // Démarrer le mouvement du bloc
@@ -92,6 +148,9 @@ export default function App() {
     setGameCompleted(false);
     setIsMoving(false);
     moveAnimation.setValue(0);
+    setTowerBlocks([]);
+    setGameOver(false);
+    setBlockPosition(0);
   };
 
   const handleBackToMenu = () => {
@@ -100,6 +159,9 @@ export default function App() {
     setGameCompleted(false);
     setIsMoving(false);
     moveAnimation.setValue(0);
+    setTowerBlocks([]);
+    setGameOver(false);
+    setBlockPosition(0);
   };
 
   // Écran de menu principal
@@ -116,6 +178,29 @@ export default function App() {
           
           <TouchableOpacity style={styles.exitButton} onPress={handleExitGame}>
             <Text style={styles.buttonText}>EXIT</Text>
+          </TouchableOpacity>
+        </View>
+        
+        <StatusBar style="auto" />
+      </View>
+    );
+  }
+
+  // Écran de game over
+  if (gameOver) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>💥 Game Over !</Text>
+        <Text style={styles.subtitle}>Le bloc s'est cassé ! Essayez de mieux viser !</Text>
+        <Text style={styles.scoreText}>Score: {towerBlocks.length} blocs</Text>
+        
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity style={styles.startButton} onPress={handleResetGame}>
+            <Text style={styles.buttonText}>REJOUER</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.exitButton} onPress={handleBackToMenu}>
+            <Text style={styles.buttonText}>MENU</Text>
           </TouchableOpacity>
         </View>
         
@@ -157,16 +242,17 @@ export default function App() {
       </View>
 
       <View style={styles.towerContainer}>
-        {/* Blocs empilés */}
-        {Array.from({ length: currentLevel }, (_, index) => (
+        {/* Blocs empilés avec positionnement précis */}
+        {towerBlocks.map((block, index) => (
           <View
-            key={index}
+            key={block.id}
             style={[
               styles.block,
               {
-                backgroundColor: colors[index],
+                backgroundColor: block.color,
                 bottom: index * 60,
-                zIndex: currentLevel - index,
+                zIndex: towerBlocks.length - index,
+                left: screenWidth / 2 - blockWidth / 2 + block.position,
               }
             ]}
           />
@@ -181,6 +267,7 @@ export default function App() {
                 backgroundColor: colors[currentLevel],
                 bottom: currentLevel * 60,
                 zIndex: 10,
+                left: screenWidth / 2 - blockWidth / 2,
                 transform: [{ translateX: moveAnimation }],
               }
             ]}
@@ -376,5 +463,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#10b981',
     shadowColor: '#10b981',
     transform: [{ scale: 1.05 }],
+  },
+  scoreText: {
+    color: '#fbbf24',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 20,
   },
 });
